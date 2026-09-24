@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ja">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>在庫管理システム</title>
@@ -21,6 +22,7 @@ nav button.active{color:#1769aa}
 .product{padding:15px;background:white;border-radius:12px;margin-bottom:10px;border:1px solid #ddd}
 .product b{font-size:17px}.tag{display:inline-block;background:#e7f1fb;color:#1769aa;border-radius:20px;padding:4px 8px;font-size:12px}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <header><h1>📦 在庫管理システム</h1></header>
@@ -94,13 +96,49 @@ nav button.active{color:#1769aa}
 
 <script>
 "use strict";
+const SUPABASE_URL = "https://brzimzxglbguabtnrcxt.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0I9jn7XDjQBZx6W0ThbTgg_cJRo4oqK";
 
+const db = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 var demoProducts = [
  {code:"C110140",part:"C110140",name:"熊本県産黄金生姜ラベル(小)#235",spec:"40*30/3C",pack:1000,stock:5000,min:1000},
  {code:"ZA-001",part:"ZA-001",name:"ミネラル野菜",spec:"10号",pack:100,stock:800,min:100}
 ];
 
-var products = load("inventory_products", demoProducts);
+var products = [];
+async function loadProductsFromSupabase(){
+  const { data, error } = await db
+    .from("products")
+    .select("*")
+    .order("id");
+
+  if(error){
+    console.error(error);
+    alert("Supabaseから商品データを取得できませんでした。");
+    products = demoProducts;
+  }else{
+    products = data.map(function(p){
+      return {
+        id:p.id,
+        code:p.code,
+        part:p.part_no || "",
+        name:p.name,
+        spec:p.spec || "",
+        pack:Number(p.pack_count) || 0,
+        stock:Number(p.stock) || 0,
+        min:Number(p.min_stock) || 0
+      };
+    });
+  }
+
+  drawHome();
+  drawProducts();
+}
+
+loadProductsFromSupabase();
 var history = load("inventory_history", []);
 var selectedCode = "";
 
@@ -208,7 +246,7 @@ function addProduct(){
  document.getElementById("newPack").value="";document.getElementById("newStock").value="0";document.getElementById("newMin").value="0";
  go("products");
 }
-drawHome();
+
 </script>
 </body>
 </html>
