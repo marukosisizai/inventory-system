@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>在庫管理システム</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans JP",sans-serif;background:#f3f6f9;color:#222}
+header{background:#1769aa;color:white;padding:18px}header h1{margin:0;font-size:20px}
+main{max-width:760px;margin:auto;padding:16px 16px 90px}.screen{display:none}.screen.active{display:block}
+.card{background:white;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+button{border:0;border-radius:9px;padding:13px;background:#1769aa;color:white;font-size:16px;font-weight:bold;cursor:pointer}
+button:active{opacity:.7}button.green{background:#16834b}button.red{background:#c2413a}button.gray{background:#6b7280}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wide{width:100%}
+input{width:100%;padding:12px;border:1px solid #bbb;border-radius:8px;font-size:16px}
+label{display:block;margin:10px 0 5px;font-size:14px;color:#555}
+.kpi{font-size:30px;font-weight:bold}.muted{color:#667085}.danger{color:#c2413a;font-weight:bold}
+nav{position:fixed;bottom:0;left:0;right:0;background:white;border-top:1px solid #ddd;display:flex;z-index:100}
+nav button{flex:1;background:white;color:#333;border-radius:0;font-size:12px;padding:10px 2px}
+nav button.active{color:#1769aa}
+.product{padding:15px;background:white;border-radius:12px;margin-bottom:10px;border:1px solid #ddd}
+.product b{font-size:17px}.tag{display:inline-block;background:#e7f1fb;color:#1769aa;border-radius:20px;padding:4px 8px;font-size:12px}
+</style>
+</head>
+<body>
+<header><h1>📦 在庫管理システム</h1></header>
+
+<main>
+<section id="home" class="screen active">
+<h2>ホーム</h2>
+<div class="grid">
+<div class="card"><div class="muted">商品数</div><div class="kpi" id="productCount">0</div></div>
+<div class="card"><div class="muted">在庫総数</div><div class="kpi" id="stockCount">0</div></div>
+</div>
+<div class="card">
+<h3>クイック操作</h3>
+<div class="grid">
+<button onclick="go('scan')">📷 QR / コード</button>
+<button onclick="go('products')">🔍 商品検索</button>
+<button class="green" onclick="go('products')">📥 入庫</button>
+<button class="red" onclick="go('products')">📤 出庫</button>
+</div>
+</div>
+<div class="card"><h3>在庫不足</h3><div id="lowStock">確認中...</div></div>
+</section>
+
+<section id="scan" class="screen">
+<h2>📷 QR / 商品コード</h2>
+<div class="card">
+<p>商品コードを入力して商品を開きます。</p>
+<input id="codeInput" placeholder="例：C110140">
+<br><br><button class="wide" onclick="findCode()">商品を開く</button>
+</div>
+</section>
+
+<section id="products" class="screen">
+<h2>🔍 商品検索</h2>
+<div class="card"><input id="searchInput" placeholder="資材コード・品名・規格" oninput="drawProducts()"></div>
+<div id="productsArea"></div>
+</section>
+
+<section id="detail" class="screen">
+<h2>📦 商品</h2>
+<div id="detailArea"></div>
+</section>
+
+<section id="history" class="screen">
+<h2>📋 入出庫履歴</h2>
+<div class="card" id="historyArea"></div>
+</section>
+
+<section id="settings" class="screen">
+<h2>⚙️ 商品登録</h2>
+<div class="card">
+<label>資材コード</label><input id="newCode">
+<label>品番</label><input id="newPart">
+<label>品名</label><input id="newName">
+<label>規格</label><input id="newSpec">
+<label>入数</label><input id="newPack" type="number">
+<label>初期在庫</label><input id="newStock" type="number" value="0">
+<label>最低在庫数</label><input id="newMin" type="number" value="0">
+<br><button class="wide" onclick="addProduct()">商品を登録</button>
+</div>
+</section>
+</main>
+
+<nav>
+<button onclick="go('home')" data-page="home">🏠<br>ホーム</button>
+<button onclick="go('scan')" data-page="scan">📷<br>QR</button>
+<button onclick="go('products')" data-page="products">🔍<br>商品</button>
+<button onclick="go('history')" data-page="history">📋<br>履歴</button>
+<button onclick="go('settings')" data-page="settings">⚙️<br>登録</button>
+</nav>
+
+<script>
+"use strict";
+
+var demoProducts = [
+ {code:"C110140",part:"C110140",name:"熊本県産黄金生姜ラベル(小)#235",spec:"40*30/3C",pack:1000,stock:5000,min:1000},
+ {code:"ZA-001",part:"ZA-001",name:"ミネラル野菜",spec:"10号",pack:100,stock:800,min:100}
+];
+
+var products = load("inventory_products", demoProducts);
+var history = load("inventory_history", []);
+var selectedCode = "";
+
+function load(key, fallback){
+ try{
+   var x=localStorage.getItem(key);
+   return x ? JSON.parse(x) : JSON.parse(JSON.stringify(fallback));
+ }catch(e){ return JSON.parse(JSON.stringify(fallback)); }
+}
+function save(){
+ try{
+   localStorage.setItem("inventory_products",JSON.stringify(products));
+   localStorage.setItem("inventory_history",JSON.stringify(history));
+ }catch(e){}
+}
+function esc(v){
+ return String(v==null?"":v).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+ });
+}
+function go(page){
+ var screens=document.querySelectorAll(".screen");
+ for(var i=0;i<screens.length;i++) screens[i].classList.remove("active");
+ var target=document.getElementById(page);
+ if(target) target.classList.add("active");
+ var nav=document.querySelectorAll("nav button");
+ for(var j=0;j<nav.length;j++) nav[j].classList.toggle("active",nav[j].getAttribute("data-page")===page);
+ if(page==="home") drawHome();
+ if(page==="products") drawProducts();
+ if(page==="history") drawHistory();
+}
+function drawHome(){
+ document.getElementById("productCount").textContent=products.length;
+ var total=0;
+ for(var i=0;i<products.length;i++) total+=Number(products[i].stock)||0;
+ document.getElementById("stockCount").textContent=total.toLocaleString();
+ var low=products.filter(function(p){return Number(p.stock)<=Number(p.min);});
+ document.getElementById("lowStock").innerHTML=low.length ?
+  low.map(function(p){return "<p><b>"+esc(p.name)+"</b><br><span class='danger'>在庫 "+p.stock+" / 最低 "+p.min+"</span></p>";}).join("")
+  : "<span style='color:#16834b'>在庫不足の商品はありません。</span>";
+}
+function drawProducts(){
+ var q=(document.getElementById("searchInput").value||"").toLowerCase();
+ var arr=products.filter(function(p){
+  return (p.code+" "+p.part+" "+p.name+" "+p.spec).toLowerCase().indexOf(q)>=0;
+ });
+ document.getElementById("productsArea").innerHTML=arr.map(function(p){
+  return "<div class='product'><b>"+esc(p.name)+"</b><br><span class='tag'>"+esc(p.code)+"</span>"+
+   "<p class='muted'>規格："+esc(p.spec)+" / 入数："+p.pack+"<br>現在庫："+Number(p.stock).toLocaleString()+"</p>"+
+   "<button onclick=\"openProduct('"+esc(p.code).replace(/'/g,"\\'")+"')\">入出庫</button></div>";
+ }).join("") || "<div class='card'>該当する商品がありません。</div>";
+}
+function openProduct(code){
+ selectedCode=code;
+ var p=products.find(function(x){return x.code===code;});
+ if(!p){alert("商品が見つかりません。");return;}
+ document.getElementById("detailArea").innerHTML=
+  "<div class='card'><b style='font-size:20px'>"+esc(p.name)+"</b><p>"+
+  "<span class='tag'>"+esc(p.code)+"</span></p>"+
+  "<p>品番："+esc(p.part)+"<br>規格："+esc(p.spec)+"<br>入数："+p.pack+"</p>"+
+  "<hr><div class='muted'>現在庫</div><div class='kpi'>"+Number(p.stock).toLocaleString()+"</div></div>"+
+  "<div class='card'><label>数量</label><input id='moveQty' type='number' min='1' value='1'><br><br>"+
+  "<div class='grid'><button class='green' onclick='move(1)'>📥 入庫</button><button class='red' onclick='move(-1)'>📤 出庫</button></div></div>";
+ go("detail");
+}
+function move(direction){
+ var qty=Number(document.getElementById("moveQty").value);
+ if(!qty || qty<1){alert("数量を入力してください。");return;}
+ var p=products.find(function(x){return x.code===selectedCode;});
+ if(!p)return;
+ if(direction<0 && Number(p.stock)<qty){alert("在庫が不足しています。");return;}
+ p.stock=Number(p.stock)+direction*qty;
+ history.unshift({date:new Date().toLocaleString("ja-JP"),code:p.code,name:p.name,type:direction>0?"入庫":"出庫",qty:qty});
+ save();
+ openProduct(p.code);
+}
+function findCode(){
+ var code=document.getElementById("codeInput").value.trim();
+ if(!code){alert("商品コードを入力してください。");return;}
+ var p=products.find(function(x){return x.code===code;});
+ if(!p){alert("商品が見つかりません。");return;}
+ openProduct(code);
+}
+function drawHistory(){
+ if(!history.length){document.getElementById("historyArea").innerHTML="履歴はありません。";return;}
+ document.getElementById("historyArea").innerHTML=history.map(function(h){
+  return "<div style='padding:12px 0;border-bottom:1px solid #ddd'><b>"+esc(h.type)+" "+h.qty+"個</b><br>"+esc(h.code)+" / "+esc(h.name)+"<br><small>"+esc(h.date)+"</small></div>";
+ }).join("");
+}
+function addProduct(){
+ var p={
+  code:document.getElementById("newCode").value.trim(),
+  part:document.getElementById("newPart").value.trim(),
+  name:document.getElementById("newName").value.trim(),
+  spec:document.getElementById("newSpec").value.trim(),
+  pack:Number(document.getElementById("newPack").value)||0,
+  stock:Number(document.getElementById("newStock").value)||0,
+  min:Number(document.getElementById("newMin").value)||0
+ };
+ if(!p.code||!p.name){alert("資材コードと品名を入力してください。");return;}
+ if(products.some(function(x){return x.code===p.code;})){alert("その資材コードは既に登録されています。");return;}
+ products.push(p);save();alert("商品を登録しました。");
+ document.getElementById("newCode").value="";document.getElementById("newPart").value="";
+ document.getElementById("newName").value="";document.getElementById("newSpec").value="";
+ document.getElementById("newPack").value="";document.getElementById("newStock").value="0";document.getElementById("newMin").value="0";
+ go("products");
+}
+drawHome();
+</script>
+</body>
+</html>
